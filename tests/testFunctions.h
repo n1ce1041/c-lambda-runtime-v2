@@ -1,0 +1,1 @@
+void run_handler_tests(void);

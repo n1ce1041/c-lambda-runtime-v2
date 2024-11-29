@@ -1,36 +1,35 @@
-# Makefile for Lambda runtime project with libcurl
-
 # Compiler and flags
 CC = gcc
-CFLAGS = -Wall -Wextra -g  # Debugging and extra warnings
-LDFLAGS = -lcurl  # Link with libcurl
+CFLAGS = -Wall -Wextra -g       # Debugging and extra warnings
+LDFLAGS = -lcurl                # Link with libcurl
 
 # Directories
 SRC_DIR = src
-BIN_DIR = bin
+BUILD_DIR = bin
 
-# Source files
-SRC = $(SRC_DIR)/runtime.c $(SRC_DIR)/handler.c
-OBJ = $(SRC:.c=.o)  # Object files derived from source files
+# Main program target
+TARGET = $(BUILD_DIR)/main_program
 
-# Output binary
-TARGET = $(BIN_DIR)/runtime
+# Source and object files for main program
+SRC_FILES = $(wildcard $(SRC_DIR)/*.c)
+OBJ_FILES = $(patsubst $(SRC_DIR)/%.c, $(BUILD_DIR)/%.o, $(SRC_FILES))
 
-# Default target (build the runtime binary)
+# Default target
 all: $(TARGET)
 
-# Linking the object files to create the binary
-$(TARGET): $(OBJ)
-	@mkdir -p $(BIN_DIR)  # Ensure the output directory exists
-	$(CC) $(OBJ) -o $(TARGET) $(LDFLAGS)
+# Build main program
+$(TARGET): $(OBJ_FILES)
+	@mkdir -p $(BUILD_DIR)
+	$(CC) $(OBJ_FILES) -o $@ $(LDFLAGS)
 
-# Compile the source files into object files
-$(SRC_DIR)/%.o: $(SRC_DIR)/%.c
+# Compile source files into object files
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
+	@mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Clean object files and binaries
+# Clean up build files
 clean:
-	rm -f $(SRC_DIR)/*.o $(BIN_DIR)/runtime
+	rm -rf $(BUILD_DIR)
 
-# Phony targets
+# Ensure phony targets are always executed
 .PHONY: all clean
