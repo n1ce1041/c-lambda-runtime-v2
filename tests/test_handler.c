@@ -1,5 +1,5 @@
-#include "../src/handler.h"
-#include "unity/unity.h"
+#include "handler.h"
+#include "unity.h"
 
 void test_lambda_handler_should_return_zero_when_success(void) {
   int result = lambda_handler();
