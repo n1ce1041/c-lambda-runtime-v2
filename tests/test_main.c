@@ -9,6 +9,7 @@ int main(void) {
 
   // Run all test suites
   run_handler_tests();
+  run_runtime_url_tests();
 
   return UNITY_END();
 }
