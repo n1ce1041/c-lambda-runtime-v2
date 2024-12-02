@@ -121,28 +121,49 @@ static size_t write_callback(void *ptr, size_t size, size_t nmemb,
 /********************************************************* */
 /***************CURL CLIENT WRAPPA************************ */
 /********************************************************* */
-/********************************************************* */
+
+int invoke_next(struct runtime_client *client, struct lambda_urls *urls) {
+
+  curl_easy_reset(client->curl_client);
+
+  return 0;
+}
+int invoke_response(struct runtime_client *client, struct lambda_urls *urls) {
+  curl_easy_reset(client->curl_client);
+
+  return 0;
+}
+int function_error(struct runtime_client *client, struct lambda_urls *urls) {
+  curl_easy_reset(client->curl_client);
+
+  return 0;
+}
+int init_error(struct runtime_client *client, struct lambda_urls *urls) {
+  curl_easy_reset(client->curl_client);
+
+  return 0;
+}
 
 int request_client(struct runtime_client *client, struct lambda_urls *urls) {
 
   curl_easy_reset(client->curl_client);
 
-  switch(client.method){
-      case INVOKE_NEXT:
-
-          invoke_next();
-          break;
-      case INVOKE_RESPONSE:
-          invoke_response();
-          break;
-      case FUNCTION_ERROR:
-          function_error();
-          break;
-      case INIT_ERROR:
-          init_error();
-          break;
-      default:
-          break;
+  switch (client->method) {
+  case INVOKE_NEXT:
+    invoke_next(client, urls);
+    break;
+  case INVOKE_RESPONSE:
+    invoke_response(client, urls);
+    break;
+  case FUNCTION_ERROR:
+    function_error(client, urls);
+    break;
+  case INIT_ERROR:
+    init_error(client, urls);
+    break;
+  default:
+    printf("This is the output");
+    break;
   }
 
   /* Function 1: Invoke next */
@@ -151,28 +172,6 @@ int request_client(struct runtime_client *client, struct lambda_urls *urls) {
   /* Function 4: Function Error*/
 
   return 0;
-}
-
-int invoke_next(struct runtime_client *client, struct lambda_urls *urls){
-    curl_easy_reset(client->curl_client);
-
-
-    return 0;
-}
-int invoke_response(struct runtime_client *client, struct lambda_urls *urls){
-    curl_easy_reset(client->curl_client);
-
-    return 0;
-}
-int function_error(struct runtime_client *client, struct lambda_urls *urls){
-    curl_easy_reset(client->curl_client);
-
-    return 0;
-}
-int init_error(struct runtime_client *client, struct lambda_urls *urls){
-    curl_easy_reset(client->curl_client);
-
-    return 0;
 }
 
 /********************************************************* */
