@@ -2,6 +2,16 @@
 #define HANDLER_H
 #include <curl/curl.h>
 
+#define SAFE_FREE(ptr)                                                         \
+  do {                                                                         \
+    if ((ptr) != NULL) {                                                       \
+      free(ptr);                                                               \
+      (ptr) = NULL;                                                            \
+    }                                                                          \
+  } while (0)
+
+
+
 enum interface_methods {
   INIT_ERROR,
   FUNCTION_ERROR,

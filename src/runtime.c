@@ -2,10 +2,12 @@
 #include <ctype.h>
 #include <curl/curl.h>
 #include <curl/easy.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+volatile sig_atomic_t loop = 1;
 #define DEFAULT_RUNTIME_API "localhost:9001"
 
 /* global to store lambda URLs for runtime usage.*/
@@ -87,24 +89,26 @@ static size_t header_callback(void *ptr, size_t size, size_t nmemb,
   // Assuming userdata is a pointer to a struct lambda_context
   struct lambda_context *context = (struct lambda_context *)userdata;
 
+  char *ptr_cp = (char *)ptr;
+
   // Parse the header and match the key
-  if (strncmp(ptr, "Lambda-Runtime-Aws-Request-Id:", 29) == 0) {
+  if (strncmp(ptr_cp, "Lambda-Runtime-Aws-Request-Id:", 29) == 0) {
     // Extract and trim the value
     context->request_id =
-        my_strdup(trim_whitespace(ptr + 29)); // Store the request ID
+        my_strdup(trim_whitespace(ptr_cp + 29)); // Store the request ID
     if (context->request_id) {
       printf("Request ID: %s\n", context->request_id);
     }
-  } else if (strncmp(ptr, "Lambda-Runtime-Trace-Id:", 24) == 0) {
+  } else if (strncmp(ptr_cp, "Lambda-Runtime-Trace-Id:", 24) == 0) {
     context->x_ray_trace_id =
-        my_strdup(trim_whitespace(ptr + 24)); // Store the trace ID
+        my_strdup(trim_whitespace(ptr_cp + 24)); // Store the trace ID
     if (context->x_ray_trace_id) {
       printf("X-Ray Trace ID: %s\n", context->x_ray_trace_id);
     }
-  } else if (strncmp(ptr, "Lambda-Runtime-Deadline-Ms:", 27) == 0) {
+  } else if (strncmp(ptr_cp, "Lambda-Runtime-Deadline-Ms:", 27) == 0) {
     // Convert the deadline value to a long long (int64)
     context->deadline = strtoll(
-        ptr + 28, NULL, 10); // Assuming 'deadline' is a long long or int64
+        ptr_cp + 28, NULL, 10); // Assuming 'deadline' is a long long or int64
     printf("Deadline: %lld\n", context->deadline);
   }
 
@@ -117,14 +121,26 @@ static size_t write_callback(void *ptr, size_t size, size_t nmemb,
   printf("Data: %.*s\n", (int)total_size, (char *)ptr);
   return total_size; // Return the number of bytes processed
 }
+
 /********************************************************* */
 /********************************************************* */
 /***************CURL CLIENT WRAPPA************************ */
 /********************************************************* */
 
-int invoke_next(struct runtime_client *client, struct lambda_urls *urls) {
+int invoke_next(struct runtime_client *client, struct lambda_urls *runtime_urls,
+                struct lambda_context *context) {
 
-  curl_easy_reset(client->curl_client);
+  printf("INSIDE INVOKE NEXT!!");
+
+  curl_easy_setopt(client->curl_client, CURLOPT_URL,
+                   runtime_urls->next_invocation);
+  curl_easy_setopt(client->curl_client, CURLOPT_HEADERFUNCTION,
+                   header_callback);
+  curl_easy_setopt(client->curl_client, CURLOPT_WRITEFUNCTION, write_callback);
+  curl_easy_setopt(client->curl_client, CURLOPT_WRITEDATA, context);
+  curl_easy_setopt(client->curl_client, CURLOPT_HEADERDATA, context);
+
+  CURLcode res = curl_easy_perform(client->curl_client);
 
   return 0;
 }
@@ -144,13 +160,15 @@ int init_error(struct runtime_client *client, struct lambda_urls *urls) {
   return 0;
 }
 
-int request_client(struct runtime_client *client, struct lambda_urls *urls) {
+int request_client(struct runtime_client *client, struct lambda_urls *urls,
+                   struct lambda_context *context) {
 
+  /* Setup , move out afterwards */
   curl_easy_reset(client->curl_client);
 
   switch (client->method) {
   case INVOKE_NEXT:
-    invoke_next(client, urls);
+    invoke_next(client, urls, context);
     break;
   case INVOKE_RESPONSE:
     invoke_response(client, urls);
@@ -171,8 +189,22 @@ int request_client(struct runtime_client *client, struct lambda_urls *urls) {
   /* Function 3: Init error */
   /* Function 4: Function Error*/
 
+  printf("Exiting request client \n");
+
   return 0;
 }
+
+/********************************************************* */
+/********************************************************* */
+/***************SETUP FUNCTIONS  ************************* */
+/********************************************************* */
+/********************************************************* */
+
+/********************************************************* */
+/********************************************************* */
+/***************INVOKE FUNCTIONS ************************* */
+/********************************************************* */
+/********************************************************* */
 
 /********************************************************* */
 /********************************************************* */
@@ -181,6 +213,7 @@ int request_client(struct runtime_client *client, struct lambda_urls *urls) {
 /********************************************************* */
 
 void free_lambda_context(struct lambda_context *context) {
+
   free(context->request_id);
   free(context->env_variables);
   free(context->x_ray_trace_id);
@@ -197,34 +230,29 @@ void free_runtime_urls(struct lambda_urls *urls) {
 int main() {
   printf("Lambda Runtime Starting...\n");
 
+  /* Var declaration and setup functions */
   struct runtime_client client;
   struct lambda_urls runtime_urls;
   struct lambda_context context;
   init_runtime_urls(&runtime_urls);
-
-  /* Setup , move out afterwards */
   curl_global_init(CURL_GLOBAL_DEFAULT);
 
   client.curl_client = curl_easy_init();
   if (client.curl_client == NULL) {
     /* OOPS */
     perror("Curl client failed to initialise");
+    return -1;
   }
 
-  curl_easy_setopt(client.curl_client, CURLOPT_URL,
-                   runtime_urls.next_invocation);
-  curl_easy_setopt(client.curl_client, CURLOPT_HEADERFUNCTION, header_callback);
-  curl_easy_setopt(client.curl_client, CURLOPT_WRITEFUNCTION, write_callback);
-  curl_easy_setopt(client.curl_client, CURLOPT_WRITEDATA, &context);
-  curl_easy_setopt(client.curl_client, CURLOPT_HEADERDATA, &context);
-
-  CURLcode res = curl_easy_perform(client.curl_client);
-  printf("Result code %d \n", res);
-  printf("Request ID: %s\nDeadline: %lld\nX-Ray Trace ID: %s\n",
-         context.request_id, context.deadline, context.x_ray_trace_id);
+  while (loop) {
+    /* Get next and populate the lambda object*/
+    client.method = INVOKE_NEXT;
+    request_client(&client, &runtime_urls, &context);
+  }
 
   /* Cleanup (move to another function)*/
   curl_global_cleanup();
+
   free_runtime_urls(&runtime_urls);
   free_lambda_context(&context);
 
