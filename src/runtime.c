@@ -119,6 +119,17 @@ static size_t write_callback(void *ptr, size_t size, size_t nmemb,
                              void *userdata) {
   size_t total_size = size * nmemb;
   printf("Data: %.*s\n", (int)total_size, (char *)ptr);
+
+  struct lambda_context *context = (struct lambda_context *)userdata;
+  char *ptr_cp = (char *)ptr;
+
+  context->event_payload = my_strdup(ptr_cp);
+  if(context->event_payload == NULL){
+      perror("event payload pointer failed to initialize");
+  }
+
+  printf("Event Payload: %s", context->event_payload);
+
   return total_size; // Return the number of bytes processed
 }
 
@@ -200,11 +211,49 @@ int request_client(struct runtime_client *client, struct lambda_urls *urls,
 /********************************************************* */
 /********************************************************* */
 
+char* get_all_env_vars(char **envp) {
+    size_t total_length = 0;
+    int count = 0;
+
+    // Calculate total length
+    for (char **env = envp; *env != NULL; env++) {
+        total_length += strlen(*env) + 1;  // +1 for newline
+        count++;
+    }
+
+    // Allocate memory
+    char* result = malloc(total_length + 1);  // +1 for null terminator
+    if (result == NULL) {
+        return NULL;
+    }
+
+    // Copy environment variables
+    char* ptr = result;
+    for (char **env = envp; *env != NULL; env++) {
+        size_t len = strlen(*env);
+        memcpy(ptr, *env, len);
+        ptr += len;
+        *ptr++ = '\n';
+    }
+    *(ptr - 1) = '\0';  // Replace last newline with null terminator
+
+    return result;
+}
+
 /********************************************************* */
 /********************************************************* */
 /***************INVOKE FUNCTIONS ************************* */
 /********************************************************* */
 /********************************************************* */
+
+int invoke_handler(struct lambda_context *context){
+    int ret = lambda_handler(context);
+    if(ret != 0){
+        perror("Lambda function returned an error");
+    }
+
+    return ret;
+}
 
 /********************************************************* */
 /********************************************************* */
@@ -217,6 +266,7 @@ void free_lambda_context(struct lambda_context *context) {
   free(context->request_id);
   free(context->env_variables);
   free(context->x_ray_trace_id);
+  free(context->event_payload);
 }
 
 void free_runtime_urls(struct lambda_urls *urls) {
@@ -226,14 +276,30 @@ void free_runtime_urls(struct lambda_urls *urls) {
   free(urls->response_template);
 }
 
+/* Debug */
+
+void print_lambda_context(struct lambda_context *ctx) {
+    printf("Request ID: %s\n", ctx->request_id);
+    printf("Deadline: %lld\n", ctx->deadline);
+    printf("Environment Variables: %s\n", ctx->env_variables);
+    printf("X-Ray Trace ID: %s\n", ctx->x_ray_trace_id);
+    printf("Event Payload: %s\n", ctx->event_payload);
+}
+
+
 #ifndef TEST
-int main() {
+int main(int argc, char *argv[], char *envp[]) {
   printf("Lambda Runtime Starting...\n");
 
   /* Var declaration and setup functions */
   struct runtime_client client;
   struct lambda_urls runtime_urls;
   struct lambda_context context;
+  struct lambda_event event;
+
+  context.env_variables = get_all_env_vars(envp);
+
+
   init_runtime_urls(&runtime_urls);
   curl_global_init(CURL_GLOBAL_DEFAULT);
 
@@ -244,11 +310,27 @@ int main() {
     return -1;
   }
 
+  /* Populate environment variables */
+
+
+
   while (loop) {
     /* Get next and populate the lambda object*/
     client.method = INVOKE_NEXT;
     request_client(&client, &runtime_urls, &context);
+    printf("************************");
+    printf("************************");
+    print_lambda_context(&context);
+    printf("************************");
+    printf("************************");
+    int retv = invoke_handler(&context);
+    printf("RETURN VALUE IS %d",retv);
+
+    
+    loop = 0;
   }
+
+
 
   /* Cleanup (move to another function)*/
   curl_global_cleanup();
