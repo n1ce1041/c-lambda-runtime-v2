@@ -27,24 +27,6 @@ The intended runtime lifecycle follows this general sequence:
 4. Submit the execution result.
 5. Continue polling for subsequent invocations.
 
-Component	Technology
-Language	C
-C Standard	C11
-Compiler	GCC
-HTTP Client	libcurl
-Build System	GNU Make
-Testing	Unity
-
-Repository Structure
-
-.
-├── build/       # Build artefacts
-├── include/     # Header files
-├── src/         # Runtime implementation
-├── tests/       # Unit tests
-├── Makefile     # Build configuration
-└── README.md
-
 ## Building
 
 The project uses GNU Make.
