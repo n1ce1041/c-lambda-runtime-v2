@@ -1,60 +1,62 @@
 DEBUG ?= 0
-TEST ?= 0
-EXECUTABLE_NAME = main
+SANITIZE ?= 0
 
-SRC_DIR = src
-INCLUDE_DIR = include
-BUILD_DIR = build
-TEST_DIR = tests
-UNITY_DIR = tests/unity
+CC ?= cc
+CPPFLAGS := -Iinclude
+CFLAGS := -std=c11 -Wall -Wextra -Werror -Wpedantic -Wshadow \
+	-Wconversion -Wstrict-prototypes
+LDLIBS := -lcurl
 
-CC = gcc
-C_STD = c11
-CFLAGS := -std=$(C_STD) -Wall -Wextra -pedantic 
-LDFLAGS = -lcurl
-CPPFLAGS := -I$(INCLUDE_DIR) 
+BUILD_DIR := build
+RUNTIME := $(BUILD_DIR)/bootstrap
+TEST_BINARY := $(BUILD_DIR)/test_main
+SOURCES := src/runtime.c src/handler.c
+HEADERS := include/runtime.h include/handler.h
 
-ifeq ($(DEBUG), 1)
-CFLAGS += -g -O0
-EXECUTABLE_NAME = dbg_main
+ifeq ($(DEBUG),1)
+CFLAGS += -O0 -g3
 else
-CFLAGS += -O3
+CFLAGS += -O2
 endif
 
-
-C_SOURCES = $(wildcard $(SRC_DIR)/*.c)
-
-ifeq ($(TEST), 1)
-CFLAGS += -DTEST
-C_SOURCES += $(wildcard $(TEST_DIR)/*.c)
-C_SOURCES += $(wildcard $(UNITY_DIR)/*.c)
-EXECUTABLE_NAME = test_main
+ifeq ($(SANITIZE),1)
+CFLAGS += -O1 -g3 -fno-omit-frame-pointer -fsanitize=address,undefined
+LDFLAGS += -fsanitize=address,undefined
 endif
 
-C_OBJECTS = $(patsubst $(SRC_DIR)/%.c, $(BUILD_DIR)/%.o, $(C_SOURCES))
+.PHONY: all build create test integration-test sanitize execute clean container
 
-COMPILER_CALL = $(CC) $(CFLAGS) $(LDFLAGS) $(CPPFLAGS)
+all: build
 
-#################
-### TARGETS #####
-#################
+build: $(RUNTIME)
 
 create:
-	@mkdir -p build
+	mkdir -p $(BUILD_DIR)
 
-build: create $(C_OBJECTS)
-	$(COMPILER_CALL) $(C_OBJECTS) $(LDFLAGS) -o $(BUILD_DIR)/$(EXECUTABLE_NAME)
+$(RUNTIME): $(SOURCES) $(HEADERS) | create
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $(SOURCES) $(LDLIBS) -o $@
 
-execute:
-	./$(BUILD_DIR)/$(EXECUTABLE_NAME)
+$(TEST_BINARY): $(SOURCES) $(HEADERS) tests/test_main.c | create
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DTEST $(LDFLAGS) $(SOURCES) \
+		tests/test_main.c $(LDLIBS) -o $@
+
+test: $(TEST_BINARY)
+	./$(TEST_BINARY)
+
+integration-test: $(RUNTIME)
+	python3 tests/integration_test.py ./$(RUNTIME)
+
+sanitize:
+	$(MAKE) clean
+	$(MAKE) SANITIZE=1 test
+	$(MAKE) SANITIZE=1 integration-test
+
+execute: $(RUNTIME)
+	./$(RUNTIME)
+
+container:
+	docker build -t c-lambda-runtime-v2 .
 
 clean:
-	rm -rf $(BUILD_DIR)/*.o
-	rm -rf $(BUILD_DIR)/$(EXECUTABLE_NAME)
-
-#################
-### PATTERNS ####
-#################
-
-$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
-	$(COMPILER_CALL) -c $< -o $@
+	rm -f $(RUNTIME) $(TEST_BINARY)
+	rmdir $(BUILD_DIR) 2>/dev/null || true

@@ -1,60 +1,116 @@
-## C Lambda Runtime
+# C Lambda Runtime
 
-A barebones implementation of an AWS Lambda Custom Runtime written in C.
+A small AWS Lambda custom runtime written in C11. The project implements the
+Lambda Runtime API lifecycle directly with libcurl to explore systems
+programming, HTTP, process lifecycle, memory ownership, and failure handling.
 
-This project explores the underlying mechanics of the AWS Lambda execution environment by implementing a runtime that communicates directly with the Lambda Runtime API.
+This is a learning project, not an AWS-supported runtime.
 
-Rather than relying on an existing language runtime, the goal is to understand the interfaces, execution lifecycle and communication mechanisms that allow Lambda functions to execute within their managed environment.
+## Runtime lifecycle
 
-## Project Objectives
+For each invocation, the runtime:
 
-The project explores several systems-level concepts:
+1. Long-polls `GET /2018-06-01/runtime/invocation/next`.
+2. Parses the request ID, deadline, function ARN, and trace ID from bounded HTTP
+   header buffers.
+3. Accumulates the event body across any number of libcurl callback chunks.
+4. Calls the C handler with an owned invocation context.
+5. Publishes the handler result or a function error to the Runtime API.
+6. Frees invocation state and waits for the next request.
 
-* Systems programming: Implementing runtime functionality in C.
-* Linux: Understanding the execution environment and application lifecycle.
-* Networking: HTTP communication with the Lambda Runtime API.
-* Runtime internals: Understanding Lambda invocation handling and execution flow.
-* Memory management: Working with C data structures and resource lifecycle.
-* Software engineering: Modular implementation, compilation and unit testing.
+`SIGTERM` and `SIGINT` stop the loop cleanly after the current libcurl operation
+returns. The demonstration handler echoes the invocation payload.
 
-AWS Lambda Custom Runtimes communicate with the Lambda Runtime API through an HTTP interface exposed inside the execution environment.
+## Safety properties
 
-The intended runtime lifecycle follows this general sequence:
+- Heap-owned fields are zero-initialized and released between invocations.
+- HTTP callbacks use the explicit buffer lengths supplied by libcurl.
+- Connect and result-publication operations have bounded timeouts. The
+  next-invocation request intentionally has no overall timeout because it is a
+  long poll.
+- libcurl failures and non-success HTTP responses stop the runtime rather than
+  creating an unbounded retry loop.
+- The runtime does not collect or print environment variables or event payloads.
+- The local test server binds only to `127.0.0.1`.
 
-1. Initialise the runtime inside the Lambda execution environment.
-2. Retrieve the next invocation from the Runtime API.
-3. Process the invocation event.
-4. Submit the execution result.
-5. Continue polling for subsequent invocations.
-
-## Building
-
-The project uses GNU Make.
-
-Compile the project:
-
-````make build```
-
-Build with debugging enabled:
-
-```make DEBUG=1 build```
-
-Build the test executable:
-
-```make TEST=1 build```
-
-Execute the resulting binary:
-
-```make execute```
-
-Clean build artefacts:
-
-```make clean```
+The runtime does not configure Lambda invocation permissions, function URLs, or
+API Gateway. Keep deployed functions private unless their intended audience and
+authorization mechanism require otherwise.
 
 ## Dependencies
 
-* GCC
-* GNU Make
-* libcurl development libraries
-* Unity testing framework (included in the repository)
+- A C11 compiler, such as GCC or Clang
+- GNU Make
+- libcurl development headers and library
+- Python 3 for the local integration test
+- Docker for the optional Lambda container image
 
+On Debian or Ubuntu:
+
+```sh
+sudo apt-get install build-essential libcurl4-openssl-dev python3
+```
+
+## Build and test
+
+```sh
+make build             # build build/bootstrap
+make test              # compile and run unit tests
+make integration-test  # exercise two complete Runtime API invocations
+make sanitize          # run tests with ASan and UBSan
+make clean
+```
+
+The integration test starts a standard-library HTTP server on an ephemeral
+loopback port. It verifies the complete `next -> handler -> response` path for
+two invocations without requiring AWS credentials.
+
+## Run against a local Runtime API
+
+Set the same environment variable that Lambda supplies and start the runtime:
+
+```sh
+AWS_LAMBDA_RUNTIME_API=127.0.0.1:9001 ./build/bootstrap
+```
+
+For bounded local experiments, the executable accepts:
+
+```sh
+AWS_LAMBDA_RUNTIME_API=127.0.0.1:9001 \
+  ./build/bootstrap --max-invocations 2
+```
+
+Do not use `--max-invocations` for a deployed Lambda runtime.
+
+## Lambda container image
+
+The multi-stage Dockerfile builds on Amazon Linux 2023 and places the executable
+at `/var/runtime/bootstrap` in the Lambda provided-runtime base image:
+
+```sh
+make container
+```
+
+The image intentionally publishes no network ports. Push and deploy it through
+your normal AWS tooling, with least-privilege Lambda invocation permissions.
+
+## Project structure
+
+```text
+include/
+  handler.h       Handler contract and invocation data
+  runtime.h       Runtime API client contract
+src/
+  handler.c       Demonstration echo handler
+  runtime.c       Runtime loop, HTTP client, parsing, and cleanup
+tests/
+  test_main.c          Unit tests
+  integration_test.py Local Runtime API integration test
+```
+
+## Current scope
+
+The project implements the core invocation lifecycle, response publication, and
+error publication. It deliberately fails fast on Runtime API transport errors;
+a production runtime would need a documented retry policy, telemetry, packaging
+release process, and broader compatibility testing.

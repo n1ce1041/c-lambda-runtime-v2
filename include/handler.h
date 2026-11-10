@@ -1,54 +1,24 @@
 #ifndef HANDLER_H
 #define HANDLER_H
-#include <curl/curl.h>
 
-#define SAFE_FREE(ptr)                                                         \
-  do {                                                                         \
-    if ((ptr) != NULL) {                                                       \
-      free(ptr);                                                               \
-      (ptr) = NULL;                                                            \
-    }                                                                          \
-  } while (0)
-
-enum interface_methods {
-  INIT_ERROR,
-  FUNCTION_ERROR,
-  INVOKE_NEXT,
-  INVOKE_RESPONSE
-};
+#include <stddef.h>
 
 struct lambda_context {
   char *request_id;
-  long long deadline;
-  char *env_variables;
-  char *x_ray_trace_id;
+  long long deadline_ms;
+  char *invoked_function_arn;
+  char *xray_trace_id;
   char *event_payload;
+  size_t event_payload_length;
 };
 
-struct lambda_urls {
-  char *next_invocation;
-  char *init_error;
-  char *function_error;
-  char *response_template;
+struct lambda_result {
+  char *payload;
+  size_t payload_length;
 };
 
-struct runtime_client {
-  CURL *curl_client;
-  enum interface_methods method;
-};
+int lambda_handler(const struct lambda_context *context,
+                   struct lambda_result *result);
+void free_lambda_result(struct lambda_result *result);
 
-struct lambda_event {
-  char *event;
-  struct lambda_context *context;
-};
-
-int lambda_handler();
-char *build_url(const char *base_url, const char *path);
-void init_runtime_urls(struct lambda_urls *urls);
-void free_runtime_urls(struct lambda_urls *urls);
-
-/* DEBUG */
-
-void print_lambda_context(struct lambda_context *ctx);
-
-#endif // HANDLER_H
+#endif
